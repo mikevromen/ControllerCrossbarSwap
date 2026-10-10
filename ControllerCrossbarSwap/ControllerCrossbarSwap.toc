@@ -1,0 +1,19 @@
+## Interface: 16001
+## Title: Controller Crossbar Swap
+## Notes: Swap the active controller crossbar with a tap of LT/RT: sticky bars, rotation into the main position, combat-safe.
+## Version: 0.3.0
+## Author: mikevromen
+## X-Website: https://github.com/mikevromen/WoWFControllerExtended
+## SavedVariables: CCS_DB, WFCE_DB
+## SavedVariablesPerCharacter: CCS_CharDB
+## OptionalDeps: Blizzard_Gamepad, Blizzard_GamepadActionBars, Blizzard_GamepadSharedUtility
+
+Core.lua
+Controller.lua
+Slots.lua
+Style.lua
+Bars.lua
+Bindings.lua
+Blizzard.lua
+Options.lua
+Debug.lua
