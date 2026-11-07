@@ -33,11 +33,52 @@ function Blizzard:RestoreModifierCVars()
 	CCS.db.savedModifiers = nil
 end
 
+-- Blizzard's LB / RB override bars (MainActionBarFrame.xml, PageUnit children). While a targeting modifier is held
+-- (LB = friendly, RB = hostile, swapped by GamepadSwapTargetModifiers; LB+RB = shortcuts), Blizzard shows one of
+-- these in place of its top bar, and its GAMEPADACTIONBUTTON1-8 bindings press that bar's buttons.
+local TARGETING_BAR_KEYS = { "FriendlyTargetingActionBar", "HostileTargetingActionBar", "ShortcutsActionBar" }
+
+function Blizzard:GetTargetingBars()
+	local main = _G.GamepadMainActionBarFrame
+	local pageUnit = main and main.PageUnit
+	local bars = {}
+	if pageUnit then
+		for _, key in ipairs(TARGETING_BAR_KEYS) do
+			if pageUnit[key] then
+				bars[#bars + 1] = pageUnit[key]
+			end
+		end
+	end
+	return bars
+end
+
+-- Key of the targeting bar Blizzard is showing right now (e.g. "ShortcutsActionBar"), or nil.
+function Blizzard:GetShownTargetingBarKey()
+	local main = _G.GamepadMainActionBarFrame
+	local pageUnit = main and main.PageUnit
+	if not pageUnit then
+		return nil
+	end
+	for _, key in ipairs(TARGETING_BAR_KEYS) do
+		if pageUnit[key] and pageUnit[key]:IsShown() then
+			return key
+		end
+	end
+	return nil
+end
+
 -- GamepadMainActionBarFrame is protected (secure children), so it can't be hidden in combat; alpha is enough.
+-- With the targeting-bars option on, those bars ignore the fade so they still show up (at Blizzard's top bar slot,
+-- which is where our main slot sits while we follow Blizzard's position). SetIgnoreParentAlpha is a widget call,
+-- not a write to Blizzard's tables, and Blizzard only uses it on flyout popups (PageUnit.lua).
 function Blizzard:SetBlizzardBarFaded(faded)
 	local bar = _G.GamepadMainActionBarFrame
 	if bar then
 		bar:SetAlpha(faded and 0 or 1)
+	end
+	local showTargeting = faded and CCS.db.targetingBars and true or false
+	for _, targetingBar in ipairs(self:GetTargetingBars()) do
+		targetingBar:SetIgnoreParentAlpha(showTargeting)
 	end
 end
 
@@ -113,7 +154,7 @@ end
 
 function Blizzard:Disable()
 	self:RestoreModifierCVars()
-	self:SetBlizzardBarFaded(false)
+	self:SetBlizzardBarFaded(false) -- also resets the targeting bars' ignore-parent-alpha
 end
 
 CCS.RegisterModule("Blizzard", Blizzard)
