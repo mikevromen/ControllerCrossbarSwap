@@ -534,6 +534,20 @@ function Bars:OnVisibleBarChanged(visibleBar)
 	end
 end
 
+-- Called from the restricted SyncPage snippet after our buttons switched to another Blizzard bar page.
+-- The action buttons refresh themselves (OnAttributeChanged); we only show which page is up. Page 1 shows no badge.
+function Bars:OnPageChanged(page)
+	self.page = page
+	if not self.pageBadge then
+		-- Above the main (top) slot, which stays put when bars rotate. Offset sits just above the expanded bar.
+		local badge = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		badge:SetPoint("BOTTOM", self.frame, "CENTER", 0, CCS.Style.BAR_ANCHORS.top[2] + 50)
+		self.pageBadge = badge
+	end
+	self.pageBadge:SetText("Page " .. page)
+	self.pageBadge:SetShown(page > 1)
+end
+
 function Bars:AttachToBlizzardPosition()
 	local frame, blizzard = self.frame, _G.GamepadMainActionBarFrame
 	frame:ClearAllPoints()

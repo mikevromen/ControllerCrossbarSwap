@@ -18,6 +18,8 @@ local CYCLE = {
 local APPLY_LAYER = [=[
 	local bar = self:GetAttribute("active-bar") or "top"
 
+	self:RunAttribute("SyncPage")
+
 	local targeting = nil
 	if self:GetAttribute("targeting-bars") then
 		for w = 1, self:GetAttribute("targeting-watch-count") or 0 do
@@ -42,6 +44,40 @@ local APPLY_LAYER = [=[
 	end
 
 	self:RunAttribute("Layout")
+]=]
+
+-- Restricted, self = header. Follows Blizzard's bar page (LB+RB + D-pad left/right, the bar edit frame ...).
+-- Blizzard pages in plain Lua and fires no event, but it does SetID(storageSlot) on its own buttons, so the ID of
+-- its first top-bar button tells the page. Runs from ApplyLayer, which the shortcuts-bar watcher triggers on
+-- release of LB+RB, so this works in combat. On the special page (4) Blizzard keeps the last standard page's IDs.
+local SYNC_PAGE = [=[
+	local ref = self:GetFrameRef("blizz-page-button")
+	if not ref then
+		return
+	end
+	local first = self:GetAttribute("first-slot")
+	local stride = self:GetAttribute("page-stride")
+	local id = ref:GetID()
+	if not id or id < first then
+		return
+	end
+	local page = floor((id - first) / stride) + 1
+	if page > self:GetAttribute("page-count") or page == self:GetAttribute("page") then
+		return
+	end
+
+	self:SetAttribute("page", page)
+	for b = 1, 4 do
+		local name = self:GetAttribute("bar-name-" .. b)
+		for i = 1, 8 do
+			local button = self:GetFrameRef("button-" .. name .. "-" .. i)
+			local base = self:GetAttribute("action-base-" .. name .. "-" .. i)
+			if button and base then
+				button:SetAttribute("action", base + stride * (page - 1))
+			end
+		end
+	end
+	self:CallMethod("OnPageChanged", page)
 ]=]
 
 -- Pre-click wrapper for the LT/RT latch buttons (self = latch button, owner = header).
@@ -94,6 +130,39 @@ function Bindings:Init()
 	end
 	header:SetAttribute("targeting-watch-count", watchCount)
 	header:SetAttribute("targeting-bars", CCS.db.targetingBars or nil)
+
+	-- Bar pages. Our buttons start on page 1; SyncPage offsets them from these page-1 slots.
+	local Slots = CCS.Slots
+	header:SetAttribute("SyncPage", SYNC_PAGE)
+	header:SetAttribute("first-slot", C_GamepadUI.GetFirstGamepadActionStorageSlotIndex())
+	header:SetAttribute("page-stride", Slots:GetPageStride())
+	header:SetAttribute("page-count", Slots.NUM_STANDARD_PAGES)
+	header:SetAttribute("page", 1)
+	for _, bar in ipairs(Controller.BARS) do
+		for i = 1, #Controller.SLOT_KEYS do
+			header:SetAttribute("action-base-" .. bar .. "-" .. i, Slots:GetActionSlot(bar, i))
+		end
+	end
+	local pageButton = CCS.Blizzard:GetPageReferenceButton()
+	if pageButton and pageButton:IsProtected() then
+		header:SetFrameRef("blizz-page-button", pageButton)
+	end
+	-- Must exist before ApplyLayer can run (rule: define header methods before any snippet calls them).
+	function header:OnPageChanged(page)
+		CCS.Bars:OnPageChanged(page)
+	end
+	-- Pages changed some other way than LB+RB (e.g. a key bound to Blizzard's page cycle button) don't trigger a
+	-- watcher; catch those out of combat. Deferred a frame so we never act inside Blizzard's call stack.
+	local pageUnit = _G.GamepadMainActionBarFrame and _G.GamepadMainActionBarFrame.PageUnit
+	if pageUnit and pageUnit.SetCurrentPage then
+		hooksecurefunc(pageUnit, "SetCurrentPage", function()
+			RunNextFrame(function()
+				CCS.RunOutOfCombat("Bindings:SyncPage", function()
+					header:Execute([[ self:RunAttribute("SyncPage") ]])
+				end)
+			end)
+		end)
+	end
 
 	CCS.Bars:SetupSecureLayout(header)
 

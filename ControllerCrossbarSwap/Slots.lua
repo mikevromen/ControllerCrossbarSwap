@@ -34,4 +34,13 @@ function Slots:GetActionSlot(bar, index, page)
 	return slot
 end
 
+-- Standard pages (Constants.GamepadActionBarConstants.NUM_STANDARD_PAGES_PER_GAMEPAD_ACTION_BAR_PAGE_UNIT). Page 4 is
+-- Blizzard's special (possess) page, which has no storage slots of its own.
+Slots.NUM_STANDARD_PAGES = 3
+
+-- Distance between the same button on two consecutive pages: every slot except the 4 reserved ones has storage.
+function Slots:GetPageStride()
+	return SLOTS_PER_PAGE - NUM_RESERVED
+end
+
 CCS.RegisterModule("Slots", Slots)
