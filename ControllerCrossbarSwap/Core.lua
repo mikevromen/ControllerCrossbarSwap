@@ -12,6 +12,7 @@ local DEFAULTS = {
 	showDefaultBarIndicator = true, -- icon above the default bar (follows it when rotating)
 	defaultBarIcon = "star",  -- key into Bars.INDICATOR_ICONS
 	inactiveBarSize = "normal", -- key into Bars.INACTIVE_SIZES (scale of the not-active bars)
+	targetingBars = true,     -- holding LB / RB / both shows Blizzard's friendly / hostile / shortcuts bar on top
 	hideBlizzardBar = true,   -- fade out Blizzard's crossbar (it is protected, so alpha only)
 	manageModifiers = true,   -- set GamePadEmulateShift/Ctrl to LT/RT while active
 	focusWatch = true,        -- clear our bindings while Blizzard UI has gamepad focus (/ccs focus to toggle)

@@ -38,6 +38,8 @@ local LAYOUT = [=[
 	local main = self:GetFrameRef("main")
 	local rotate = self:GetAttribute("rotate")
 	local latchedIndex = self:GetAttribute("ring-index-" .. latched)
+	-- Set by ApplyLayer: Blizzard's LB / RB targeting bar is showing in the main slot, so ours steps out of view.
+	local targeting = self:GetAttribute("blizz-targeting")
 
 	for b = 1, 4 do
 		local name = self:GetAttribute("bar-name-" .. b)
@@ -63,6 +65,7 @@ local LAYOUT = [=[
 		barFrame:SetWidth(self:GetAttribute("bar-width-" .. focus))
 		barFrame:SetHeight(self:GetAttribute("bar-height-" .. focus))
 		barFrame:SetFrameLevel(self:GetAttribute("bar-level-" .. focus))
+		barFrame:SetAlpha((targeting and slotName == "top") and 0 or 1)
 
 		for i = 1, 8 do
 			local button = self:GetFrameRef("button-" .. name .. "-" .. i)
@@ -243,15 +246,33 @@ function Bars:CreateShoulderArt()
 	if CVarCallbackRegistry then
 		CVarCallbackRegistry:RegisterCallback("GamepadSwapTargetModifiers", self.RefreshShoulderIcons, self)
 	end
+	-- Blizzard swaps its shoulder icons while a targeting bar is up (SetShoulderIcons in TargetActionBars/*.lua).
+	-- HookScript adds to Blizzard's handlers without replacing them.
+	for _, targetingBar in ipairs(CCS.Blizzard:GetTargetingBars()) do
+		targetingBar:HookScript("OnShow", function() self:RefreshShoulderIcons() end)
+		targetingBar:HookScript("OnHide", function() self:RefreshShoulderIcons() end)
+	end
 end
 
 function Bars:RefreshShoulderIcons()
-	local friendly, hostile = "gamepad-targeting-friendly", "gamepad-targeting-hostile"
+	local SHORTCUTS = "gamepad-targeting-shortcuts"
+	local left, right = "gamepad-targeting-friendly", "gamepad-targeting-hostile"
 	if C_CVar.GetCVarBool("GamepadSwapTargetModifiers") then
-		friendly, hostile = hostile, friendly
+		left, right = right, left
 	end
-	self.shoulders.left.icon:SetAtlas(friendly, true)
-	self.shoulders.right.icon:SetAtlas(hostile, true)
+
+	-- Same as Blizzard: while a targeting bar is up, the other shoulder (now opening shortcuts) shows that icon.
+	local shown = CCS.db.targetingBars and CCS.Blizzard:GetShownTargetingBarKey()
+	if shown == "ShortcutsActionBar" then
+		left, right = SHORTCUTS, SHORTCUTS
+	elseif shown == "FriendlyTargetingActionBar" then
+		if left == "gamepad-targeting-friendly" then right = SHORTCUTS else left = SHORTCUTS end
+	elseif shown == "HostileTargetingActionBar" then
+		if left == "gamepad-targeting-hostile" then right = SHORTCUTS else left = SHORTCUTS end
+	end
+
+	self.shoulders.left.icon:SetAtlas(left, true)
+	self.shoulders.right.icon:SetAtlas(right, true)
 end
 
 function Bars:OnTargetModifierChanged(flag, down)

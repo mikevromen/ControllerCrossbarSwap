@@ -61,6 +61,13 @@ local ROWS = {
 		choices = CCS.Bars.INACTIVE_SIZES,
 		onChange = function() CCS.Bars:ApplyInactiveScale() end,
 	},
+	{
+		type = "checkbox",
+		key = "targetingBars",
+		label = "LB / RB targeting bars",
+		tooltip = "While you hold LB, RB or both, the main bar shows Blizzard's friendly, hostile or shortcuts bar (party and raid targeting, raid markers, bar pages, bags, chat ...), like the default controller UI. Turn this off to keep your own main bar while holding LB / RB.",
+		onChange = function(value) CCS.Bindings:SetTargetingBars(value) end,
+	},
 }
 
 local PANEL_WIDTH = 420

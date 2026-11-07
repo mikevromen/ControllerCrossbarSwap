@@ -13,13 +13,26 @@ local CYCLE = {
 
 -- Runs in the restricted environment (self = header handle). Rebinds the bare D-pad/face keys to the
 -- latched bar; on the top bar only the D-pad is bound and its face buttons fall through to Blizzard.
+-- While Blizzard shows an LB / RB targeting bar, all bare keys fall through, so Blizzard's GAMEPADACTIONBUTTON
+-- bindings press that bar (party / raid targeting, markers, pages, bags ...). "blizz-targeting" tells Layout.
 local APPLY_LAYER = [=[
 	local bar = self:GetAttribute("active-bar") or "top"
 
-	if not self:GetAttribute("suspended") then
+	local targeting = nil
+	if self:GetAttribute("targeting-bars") then
+		for w = 1, self:GetAttribute("targeting-watch-count") or 0 do
+			local watch = self:GetFrameRef("targeting-watch-" .. w)
+			if watch and watch:IsVisible() then
+				targeting = true
+			end
+		end
+	end
+	self:SetAttribute("blizz-targeting", targeting)
+
+	if self:GetAttribute("enabled") and not self:GetAttribute("suspended") then
 		for i = 1, 8 do
 			local key = self:GetAttribute("key-" .. i)
-			local target = self:GetAttribute("button-" .. bar .. "-" .. i)
+			local target = not targeting and self:GetAttribute("button-" .. bar .. "-" .. i)
 			if target then
 				self:SetBindingClick(true, key, target)
 			else
@@ -39,6 +52,13 @@ local LATCH_ON_CLICK = [=[
 	owner:SetAttribute("active-bar", nextBar)
 	owner:RunAttribute("ApplyLayer")
 	return false
+]=]
+
+-- _onshow / _onhide of a targeting-bar watcher (self = watcher handle). Blizzard switches its targeting bars from
+-- Lua callbacks; ours would run insecurely and can't rebind in combat. A protected child frame's visibility follows
+-- its parent, though, so these run securely whenever Blizzard shows or hides the bar, in combat too.
+local TARGETING_WATCH_CHANGED = [=[
+	self:GetFrameRef("header"):RunAttribute("ApplyLayer")
 ]=]
 
 function Bindings:Init()
@@ -61,6 +81,19 @@ function Bindings:Init()
 			header:SetAttribute("cycle-" .. side .. "-" .. from, to)
 		end
 	end
+
+	-- One watcher per Blizzard targeting bar, parented to it (created out of combat, never touched afterwards).
+	local watchCount = 0
+	for _, targetingBar in ipairs(CCS.Blizzard:GetTargetingBars()) do
+		watchCount = watchCount + 1
+		local watch = CreateFrame("Frame", "CCS_TargetingWatch" .. watchCount, targetingBar, "SecureHandlerShowHideTemplate")
+		watch:SetFrameRef("header", header)
+		watch:SetAttribute("_onshow", TARGETING_WATCH_CHANGED)
+		watch:SetAttribute("_onhide", TARGETING_WATCH_CHANGED)
+		header:SetFrameRef("targeting-watch-" .. watchCount, watch)
+	end
+	header:SetAttribute("targeting-watch-count", watchCount)
+	header:SetAttribute("targeting-bars", CCS.db.targetingBars or nil)
 
 	CCS.Bars:SetupSecureLayout(header)
 
@@ -143,13 +176,29 @@ function Bindings:SetSuspended(suspended)
 	end)
 end
 
+-- Out of combat only (options window): toggle the LB / RB targeting bars.
+function Bindings:SetTargetingBars(enabled)
+	if InCombatLockdown() then
+		return
+	end
+	self.header:SetAttribute("targeting-bars", enabled or nil)
+	self.header:Execute([[ self:RunAttribute("ApplyLayer") ]])
+	if CCS.active then
+		CCS.Blizzard:SetBlizzardBarFaded(CCS.db.hideBlizzardBar)
+	end
+	CCS.Bars:RefreshShoulderIcons()
+end
+
 function Bindings:Enable()
 	self:ResetLatch()
+	-- The targeting watchers can rerun ApplyLayer at any time; this keeps them from binding while we're disabled.
+	self.header:SetAttribute("enabled", true)
 	self:ApplyStatic()
 end
 
 function Bindings:Disable()
 	self:ResetLatch()
+	self.header:SetAttribute("enabled", nil)
 	ClearOverrideBindings(self.header)
 end
 
