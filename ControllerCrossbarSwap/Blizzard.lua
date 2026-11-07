@@ -52,6 +52,15 @@ function Blizzard:GetTargetingBars()
 	return bars
 end
 
+-- Blizzard's first top-bar D-pad button (page-unit slot 1, never reserved). Its ID is the storage slot of the
+-- current page (UpdatePageableGamepadButtonAction), which Bindings' SyncPage reads. Read-only use.
+function Blizzard:GetPageReferenceButton()
+	local main = _G.GamepadMainActionBarFrame
+	local anchor = main and main.PageUnit and main.PageUnit.TopCenteredAnchor
+	local bar = anchor and anchor.Bar
+	return bar and bar.Left and bar.Left.ActionButton1
+end
+
 -- Key of the targeting bar Blizzard is showing right now (e.g. "ShortcutsActionBar"), or nil.
 function Blizzard:GetShownTargetingBarKey()
 	local main = _G.GamepadMainActionBarFrame
@@ -79,6 +88,11 @@ function Blizzard:SetBlizzardBarFaded(faded)
 	local showTargeting = faded and CCS.db.targetingBars and true or false
 	for _, targetingBar in ipairs(self:GetTargetingBars()) do
 		targetingBar:SetIgnoreParentAlpha(showTargeting)
+	end
+	-- Blizzard's page tracker (shown while LB+RB is held) is how you see which page D-pad left/right picks.
+	local pageTracker = bar and bar.PageUnit and bar.PageUnit.PageTracker
+	if pageTracker then
+		pageTracker:SetIgnoreParentAlpha(showTargeting)
 	end
 end
 
