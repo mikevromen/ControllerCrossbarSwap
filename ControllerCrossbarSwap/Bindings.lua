@@ -86,8 +86,32 @@ local LATCH_ON_CLICK = [=[
 	local current = owner:GetAttribute("active-bar") or "top"
 	local nextBar = owner:GetAttribute("cycle-" .. self:GetAttribute("side") .. "-" .. current) or "top"
 	owner:SetAttribute("active-bar", nextBar)
+	-- Remembered for the "Last bar used in combat" choice of the combat-bar option. With the experimental
+	-- "last-skip-top", the default bar doesn't count: tapping back to it mid-fight (to loot or interact) would
+	-- otherwise make the next fight start without a switch.
+	if owner:GetAttribute("in-combat") and not (nextBar == "top" and owner:GetAttribute("last-skip-top")) then
+		owner:SetAttribute("last-combat-bar", nextBar)
+	end
 	owner:RunAttribute("ApplyLayer")
 	return false
+]=]
+
+-- _onstate-combat (self = header), driven by "[combat] on; off". A state driver evaluates macro conditions
+-- securely, so the switch happens as combat starts, under lockdown. Option "Bar when combat starts" (db.combatBar):
+-- "combat-bar" is a bar name, "last" (the bar last tapped to in combat) or nil (off).
+local ON_COMBAT_STATE = [=[
+	self:SetAttribute("in-combat", newstate == "on" or nil)
+	if newstate ~= "on" then
+		return
+	end
+	local target = self:GetAttribute("combat-bar")
+	if target == "last" then
+		target = self:GetAttribute("last-combat-bar")
+	end
+	if target and target ~= (self:GetAttribute("active-bar") or "top") then
+		self:SetAttribute("active-bar", target)
+		self:RunAttribute("ApplyLayer")
+	end
 ]=]
 
 -- _onshow / _onhide of a targeting-bar watcher (self = watcher handle). Blizzard switches its targeting bars from
@@ -167,6 +191,8 @@ function Bindings:Init()
 	CCS.Bars:SetupSecureLayout(header)
 
 	CCS.On("PLAYER_REGEN_ENABLED", function()
+		-- Read before a revert; kept per character so "last bar used in combat" survives a /reload.
+		CCS.charDB.lastCombatBar = header:GetAttribute("last-combat-bar")
 		if CCS.db.resetBarAfterCombat then
 			self:ReturnToDefaultBar()
 		end
@@ -180,6 +206,21 @@ function Bindings:Init()
 		header:WrapScript(button, "OnClick", LATCH_ON_CLICK)
 		self.latchButtons[side] = button
 	end
+
+	-- Last: registering runs the snippet right away, and in combat (a /reload mid-fight) that runs ApplyLayer.
+	header:SetAttribute("last-combat-bar", CCS.charDB.lastCombatBar)
+	self:SetCombatBar(CCS.db.combatBar)
+	header:SetAttribute("_onstate-combat", ON_COMBAT_STATE)
+	RegisterStateDriver(header, "combat", "[combat] on; off")
+end
+
+-- Out of combat only (options window): "off", "last" or a bar name.
+function Bindings:SetCombatBar(value)
+	if InCombatLockdown() then
+		return
+	end
+	self.header:SetAttribute("combat-bar", value ~= "off" and value or nil)
+	self.header:SetAttribute("last-skip-top", CCS.db.lastCombatBarSkipDefault or nil)
 end
 
 -- Static bindings: held triggers act as SHIFT/CTRL, so modified keys map straight to their bar.

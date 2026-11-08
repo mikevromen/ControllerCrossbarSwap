@@ -22,9 +22,6 @@ local RING_INDEX = { top = 0, right = 1, bottom = 2, left = 3 }
 
 local ROTATE_ANIM_DURATION = 0.22
 
--- The bar "revert after combat" returns to; marked by the default-bar indicator.
-local DEFAULT_BAR = "top"
-
 -- Restricted environment, self = header. Positions, resizes and re-anchors bars and buttons.
 -- * Expanded bar: the visible one (held modifier wins over the latched bar).
 -- * With "rotate" on, bars shift around the ring so the latched bar sits in the top (main) slot.
@@ -295,7 +292,7 @@ function Bars:Init()
 	end
 	self:CreateModifierIcons()
 	self:CreateShoulderArt()
-	self:CreateIndicator()
+	self:CreateIndicators()
 
 	if InputDeviceIconSetManager and InputDeviceIconSetManager.RegisterActiveInputDeviceIconSetUpdatedCallback then
 		InputDeviceIconSetManager:RegisterActiveInputDeviceIconSetUpdatedCallback(function()
@@ -420,34 +417,57 @@ function Bars:AnimateRotation()
 	end
 end
 
--- Default-bar indicator: a gold star in Blizzard's IdentifierIcon slot (GamepadActionBarTemplate uses it to mark
--- special bars like the possess bar): centred above the bar, 30 px collapsed / 35 px expanded at +38 / +48.
--- It's a child of the default bar, so it travels with it when bars rotate (including the glide).
--- Selectable in the options window (db.defaultBarIcon). Atlases are ones the Forever client's own UI uses;
--- the raid markers are classic texture files.
+-- Bar icons: one per bar in Blizzard's IdentifierIcon slot (GamepadActionBarTemplate uses it to mark special bars
+-- like the possess bar): centred above the bar, 30 px collapsed / 35 px expanded at +38 / +48.
+-- Each is a child of its bar, so it travels with it when bars rotate (including the glide).
+-- Chosen per bar in the options window (BAR_ICON_SETTINGS). Atlases are ones the Forever client's own UI uses
+-- (numbered page badges 1-3: PageUnit.lua); the raid markers are classic texture files.
+local RAID_ICON = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_"
 Bars.INDICATOR_ICONS = {
+	{ key = "none", label = "None" },
 	{ key = "star", label = "Gold star", atlas = "auctionhouse-icon-favorite" },
-	{ key = "page", label = "Page badge", atlas = "gamepad-actionbar-numericalpage-1-selected" },
-	{ key = "raidStar", label = "Raid marker: star", file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1" },
-	{ key = "raidDiamond", label = "Raid marker: diamond", file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3" },
-	{ key = "raidSkull", label = "Raid marker: skull", file = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8" },
+	{ key = "page", label = "Number 1", atlas = "gamepad-actionbar-numericalpage-1-selected" },
+	{ key = "page2", label = "Number 2", atlas = "gamepad-actionbar-numericalpage-2-selected" },
+	{ key = "page3", label = "Number 3", atlas = "gamepad-actionbar-numericalpage-3-selected" },
+	{ key = "raidStar", label = "Raid marker: star", file = RAID_ICON .. "1" },
+	{ key = "raidCircle", label = "Raid marker: circle", file = RAID_ICON .. "2" },
+	{ key = "raidDiamond", label = "Raid marker: diamond", file = RAID_ICON .. "3" },
+	{ key = "raidTriangle", label = "Raid marker: triangle", file = RAID_ICON .. "4" },
+	{ key = "raidMoon", label = "Raid marker: moon", file = RAID_ICON .. "5" },
+	{ key = "raidSquare", label = "Raid marker: square", file = RAID_ICON .. "6" },
+	{ key = "raidCross", label = "Raid marker: cross", file = RAID_ICON .. "7" },
+	{ key = "raidSkull", label = "Raid marker: skull", file = RAID_ICON .. "8" },
+	-- Crossed swords: the PvP countdown "go" art (FrameXML Timer.lua). Sword: a classic item icon (square art).
+	{ key = "swords", label = "Crossed swords", atlas = "countdown-swords" },
+	{ key = "sword", label = "Sword", file = "Interface\\Icons\\INV_Sword_04" },
 	{ key = "check", label = "Checkmark", atlas = "Adventures-Checkmark" },
 	{ key = "crest", label = "Gold crest", atlas = "Artifacts-CrestRune-Gold" },
 }
 
+-- Bar -> CCS.db key of its icon. The default bar keeps its pre-1.0.1 key so saved choices carry over.
+Bars.BAR_ICON_SETTINGS = {
+	top = "defaultBarIcon",
+	left = "barIconLeft",
+	right = "barIconRight",
+	bottom = "barIconBottom",
+}
+
+-- Returns the icon entry for a key, or nil for "none" and unknown keys.
 function Bars:GetIndicatorIcon(key)
 	for _, icon in ipairs(self.INDICATOR_ICONS) do
 		if icon.key == key then
-			return icon
+			return (icon.atlas or icon.file) and icon or nil
 		end
 	end
-	return self.INDICATOR_ICONS[1]
+	return nil
 end
 
--- Applies an icon entry to a texture (also used by the options preview).
+-- Applies an icon entry to a texture (also used by the options preview). "none" clears it.
 function Bars:SetIndicatorTexture(texture, key)
 	local icon = self:GetIndicatorIcon(key)
-	if icon.atlas then
+	if not icon then
+		texture:SetTexture(nil)
+	elseif icon.atlas then
 		texture:SetAtlas(icon.atlas)
 	else
 		texture:SetTexture(icon.file)
@@ -459,48 +479,52 @@ local INDICATOR_LAYOUT = {
 	expanded = { size = 35, y = 48 },
 }
 
-function Bars:CreateIndicator()
-	local group = self.groups[DEFAULT_BAR]
-	local indicator = CreateFrame("Frame", nil, group)
-	indicator:SetFrameLevel(group:GetFrameLevel() + 5)
+function Bars:CreateIndicators()
+	self.indicators = {}
+	for bar, group in pairs(self.groups) do
+		local indicator = CreateFrame("Frame", nil, group)
+		indicator:SetFrameLevel(group:GetFrameLevel() + 5)
 
-	indicator.Icon = indicator:CreateTexture(nil, "ARTWORK")
-	indicator.Icon:SetAllPoints()
-	self:SetIndicatorTexture(indicator.Icon, CCS.db.defaultBarIcon)
-	indicator:Hide()
+		indicator.Icon = indicator:CreateTexture(nil, "ARTWORK")
+		indicator.Icon:SetAllPoints()
+		indicator:Hide()
 
-	indicator.fadeIn = indicator:CreateAnimationGroup()
-	local alpha = indicator.fadeIn:CreateAnimation("Alpha")
-	alpha:SetFromAlpha(0)
-	alpha:SetToAlpha(1)
-	alpha:SetDuration(0.2)
+		indicator.fadeIn = indicator:CreateAnimationGroup()
+		local alpha = indicator.fadeIn:CreateAnimation("Alpha")
+		alpha:SetFromAlpha(0)
+		alpha:SetToAlpha(1)
+		alpha:SetDuration(0.2)
 
-	self.indicator = indicator
-	self:LayoutIndicator(CCS.Style.FOCUS.COLLAPSED)
+		self.indicators[bar] = indicator
+		self:LayoutIndicator(bar, CCS.Style.FOCUS.COLLAPSED)
+	end
 end
 
 -- Not protected, so this is fine in combat (called from OnVisibleBarChanged).
-function Bars:LayoutIndicator(focus)
+function Bars:LayoutIndicator(bar, focus)
 	local layout = INDICATOR_LAYOUT[focus]
-	local indicator = self.indicator
+	local indicator = self.indicators[bar]
 	indicator:SetSize(layout.size, layout.size)
 	indicator:ClearAllPoints()
-	indicator:SetPoint("CENTER", self.groups[DEFAULT_BAR], "CENTER", 0, layout.y)
+	indicator:SetPoint("CENTER", self.groups[bar], "CENTER", 0, layout.y)
 end
 
+-- Option "Show bar icons" (db.showDefaultBarIndicator, its pre-1.0.1 key) plus one icon choice per bar.
 function Bars:RefreshIndicator()
-	local indicator = self.indicator
-	if not indicator then
+	if not self.indicators then
 		return
 	end
-	self:SetIndicatorTexture(indicator.Icon, CCS.db.defaultBarIcon)
-	local show = CCS.db.showDefaultBarIndicator
-	if show and not indicator:IsShown() then
-		indicator:Show()
-		indicator.fadeIn:Play()
-	elseif not show and indicator:IsShown() then
-		indicator.fadeIn:Stop()
-		indicator:Hide()
+	for bar, indicator in pairs(self.indicators) do
+		local key = CCS.db[self.BAR_ICON_SETTINGS[bar]]
+		self:SetIndicatorTexture(indicator.Icon, key)
+		local show = CCS.db.showDefaultBarIndicator and self:GetIndicatorIcon(key) ~= nil
+		if show and not indicator:IsShown() then
+			indicator:Show()
+			indicator.fadeIn:Play()
+		elseif not show and indicator:IsShown() then
+			indicator.fadeIn:Stop()
+			indicator:Hide()
+		end
 	end
 end
 
@@ -513,8 +537,8 @@ function Bars:OnVisibleBarChanged(visibleBar)
 	for bar, group in pairs(self.groups) do
 		local focus = bar == visibleBar and Style.FOCUS.EXPANDED or Style.FOCUS.COLLAPSED
 		group.BackgroundFocus:SetShown(focus == Style.FOCUS.EXPANDED)
-		if bar == DEFAULT_BAR and self.indicator then
-			self:LayoutIndicator(focus)
+		if self.indicators then
+			self:LayoutIndicator(bar, focus)
 		end
 
 		for index, button in ipairs(group.buttons) do
@@ -539,9 +563,9 @@ end
 function Bars:OnPageChanged(page)
 	self.page = page
 	if not self.pageBadge then
-		-- Above the main (top) slot, which stays put when bars rotate. Offset sits just above the expanded bar.
+		-- Above the main (top) slot, which stays put when bars rotate. Offset clears the expanded bar's icon.
 		local badge = self.frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-		badge:SetPoint("BOTTOM", self.frame, "CENTER", 0, CCS.Style.BAR_ANCHORS.top[2] + 50)
+		badge:SetPoint("BOTTOM", self.frame, "CENTER", 0, CCS.Style.BAR_ANCHORS.top[2] + 72)
 		self.pageBadge = badge
 	end
 	self.pageBadge:SetText("Page " .. page)
