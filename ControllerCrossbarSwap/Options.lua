@@ -12,13 +12,58 @@ local Options = {}
 
 local TITLE = "Controller Crossbar Swap"
 
+-- Icon choice row for one bar (option "Show bar icons").
+local function BarIconRow(bar, label)
+	return {
+		type = "choice",
+		key = CCS.Bars.BAR_ICON_SETTINGS[bar],
+		label = label,
+		tooltip = "Icon shown above this bar. Use left/right (or A) to change it.",
+		choices = CCS.Bars.INDICATOR_ICONS,
+		setPreview = function(texture, key) CCS.Bars:SetIndicatorTexture(texture, key) end,
+		enabledBy = "showDefaultBarIndicator",
+		indent = 24,
+		onChange = function() CCS.Bars:RefreshIndicator() end,
+	}
+end
+
+-- Choices of "Bar when combat starts". Bar choices preview that bar's icon (from "Show bar icons").
+local COMBAT_BAR_CHOICES = {
+	{ key = "off", label = "Off" },
+	{ key = "left", label = "LT bar" },
+	{ key = "right", label = "RT bar" },
+	{ key = "bottom", label = "LT+RT bar" },
+	{ key = "last", label = "Last bar used in combat" },
+}
+
 -- Rows of the window, bound to CCS.db[key]. "enabledBy" greys a row out while that setting is off.
 local ROWS = {
+	{
+		type = "choice",
+		key = "combatBar",
+		label = "Bar when combat starts",
+		tooltip = "Switches to this bar as soon as combat starts, so your fighting spells are on the main buttons while the default bar keeps loot, interact and so on. \"Last bar used in combat\" picks the bar you last tapped to in a fight. Tapping LT / RT still swaps bars mid-fight. Combine it with \"Revert to default bar after combat\" to switch back afterwards.",
+		choices = COMBAT_BAR_CHOICES,
+		setPreview = function(texture, key)
+			local setting = CCS.Bars.BAR_ICON_SETTINGS[key]
+			CCS.Bars:SetIndicatorTexture(texture, setting and CCS.db.showDefaultBarIndicator and CCS.db[setting] or "none")
+		end,
+		onChange = function(value) CCS.Bindings:SetCombatBar(value) end,
+	},
+	{
+		type = "checkbox",
+		key = "lastCombatBarSkipDefault",
+		label = "Ignore default bar for last bar (experimental)",
+		tooltip = "Experimental, still being tested. With \"Last bar used in combat\", tapping back to the default bar during a fight (to loot or interact) no longer counts as your last bar, so the next fight still switches to your combat bar.",
+		enabledBy = function() return CCS.db.combatBar == "last" end,
+		indent = 24,
+		onChange = function() CCS.Bindings:SetCombatBar(CCS.db.combatBar) end,
+	},
 	{
 		type = "checkbox",
 		key = "resetBarAfterCombat",
 		label = "Revert to default bar after combat",
-		tooltip = "When combat ends, switch back to the default bar if another bar was selected by tapping LT or RT.",
+		tooltip = "When combat ends, switch back to the default bar if another bar was selected by tapping LT or RT, or by \"Bar when combat starts\".",
 	},
 	{
 		type = "checkbox",
@@ -38,21 +83,14 @@ local ROWS = {
 	{
 		type = "checkbox",
 		key = "showDefaultBarIndicator",
-		label = "Highlight the default bar",
-		tooltip = "Shows an icon above the default bar (the one you return to after combat), so you can always see where it is, also when bars rotate.",
+		label = "Show bar icons",
+		tooltip = "Shows an icon above each bar, so you can tell them apart, also when bars rotate. Pick an icon (or None) for each bar below. By default only the default bar (the one you return to after combat) has one.",
 		onChange = function() CCS.Bars:RefreshIndicator() end,
 	},
-	{
-		type = "choice",
-		key = "defaultBarIcon",
-		label = "Default bar icon",
-		tooltip = "Icon shown above the default bar. Use left/right (or A) to change it.",
-		choices = CCS.Bars.INDICATOR_ICONS,
-		setPreview = function(texture, key) CCS.Bars:SetIndicatorTexture(texture, key) end,
-		enabledBy = "showDefaultBarIndicator",
-		indent = 24,
-		onChange = function() CCS.Bars:RefreshIndicator() end,
-	},
+	BarIconRow("top", "Default bar icon"),
+	BarIconRow("left", "LT bar icon"),
+	BarIconRow("right", "RT bar icon"),
+	BarIconRow("bottom", "LT+RT bar icon"),
 	{
 		type = "choice",
 		key = "inactiveBarSize",
@@ -81,8 +119,13 @@ local function ShowTooltip(row)
 	GameTooltip:Show()
 end
 
+-- enabledBy: a setting key (row is enabled while it's on) or a function.
 local function IsRowEnabled(row)
-	return not row.info.enabledBy or CCS.db[row.info.enabledBy]
+	local enabledBy = row.info.enabledBy
+	if type(enabledBy) == "function" then
+		return enabledBy()
+	end
+	return not enabledBy or CCS.db[enabledBy]
 end
 
 local function NotifyChange(info)
