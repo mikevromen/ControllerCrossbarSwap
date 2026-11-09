@@ -390,11 +390,9 @@ end
 
 -- Native Options > AddOns page: a canvas with a hint and an "Open options window" button.
 -- The button is marked ignored for gamepad SmartNavigation, so the page has no controller-focusable control
--- (backing out with B from a page with one freezes the client, see top of file). Instead, while the page is shown,
--- it owns an override binding on Y (GAMEPAD_FACE_TOP) that clicks the button. On this page SmartNavigation only uses
--- A, B and the D-pad, and Y is Blizzard's "open" button on dropdowns/selectors, so it fits.
-local NATIVE_PAGE_KEY = GAMEPAD_FACE_TOP or "PAD4"
-
+-- (backing out with B from a page with one freezes the client, see top of file). So it's mouse-only; controller
+-- players use /ccs options. (Until 1.2 the page bound Y to the button while shown; removed 2026-11-09 after reports
+-- of the binding leaking onto the default bar's Y and of LB / RT / Y misbehaving after visiting the page.)
 function Options:CreateNativePage()
 	local page = CreateFrame("Frame")
 
@@ -405,7 +403,7 @@ function Options:CreateNativePage()
 	local hint = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
 	hint:SetJustifyH("LEFT")
-	hint:SetText("Settings are in their own window, which also works with a controller.\nOpen it with the button below, or type /ccs options.")
+	hint:SetText("Settings are in their own window, which also works with a controller.\nType /ccs options to open it, or click the button below.")
 
 	local button = CreateFrame("Button", "CCS_NativeOpenButton", page, "UIPanelButtonTemplate")
 	button:SetSize(220, 26)
@@ -415,27 +413,6 @@ function Options:CreateNativePage()
 	if SmartNavigation_MarkFrameIgnored then
 		SmartNavigation_MarkFrameIgnored(button) -- sets a flag on our own button only
 	end
-
-	-- Controller prompt next to the button (gamepad mode only).
-	local prompt = CreateFrame("Frame", nil, page, "InputIconTextureFrameTemplate")
-	prompt:SetInputKey(NATIVE_PAGE_KEY)
-	prompt:SetSize(24, 24)
-	prompt:SetPoint("LEFT", button, "RIGHT", 8, 0)
-
-	page:SetScript("OnShow", function()
-		local gamepad = CCS.IsGamepadUI()
-		prompt:SetShown(gamepad)
-		if gamepad and not InCombatLockdown() then
-			SetOverrideBindingClick(page, true, NATIVE_PAGE_KEY, button:GetName())
-		end
-	end)
-	page:SetScript("OnHide", function()
-		CCS.RunOutOfCombat("Options:NativePageBinding", function()
-			if not page:IsShown() then
-				ClearOverrideBindings(page)
-			end
-		end)
-	end)
 
 	local category = Settings.RegisterCanvasLayoutCategory(page, TITLE)
 	Settings.RegisterAddOnCategory(category)
