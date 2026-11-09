@@ -37,6 +37,24 @@ function Debug:PrintStatus()
 	CCS.Print(("GamePadEmulateShift=%s  GamePadEmulateCtrl=%s  tapWindow=%sms  firstGamepadSlot=%s"):format(
 		GetCVar("GamePadEmulateShift"), GetCVar("GamePadEmulateCtrl"), GetCVar("GamePadEmulateTapWindowMs"),
 		tostring(C_GamepadUI.GetFirstGamepadActionStorageSlotIndex())))
+
+	-- Blizzard's binding-set stack (read-only). Any set not treated as core means "a Blizzard UI has focus": then
+	-- Blizzard ignores LB / RB / HUD modifiers and we stay suspended. A set left here after its UI closed is stuck.
+	local manager = GamepadSharedUtility and GamepadSharedUtility.InputBindingManager
+	if manager then
+		local sets = {}
+		for _, set in ipairs(manager.bindingSetStack or {}) do
+			sets[#sets + 1] = tostring(set.name) .. (set.treatBindsAsCore and " (core)" or "")
+		end
+		CCS.Print(("onlyCore=%s  assumeCore=%s  sets: %s"):format(OnOff(manager:IsOnlyCoreBindingSetActive()),
+			OnOff(manager.assumeCoreBindingsUsable), #sets > 0 and table.concat(sets, ", ") or "-"))
+	end
+	local frameControls = GamepadMode and GamepadMode.FrameControlsManager
+	if frameControls then
+		local focused = frameControls.focusedFrame
+		CCS.Print(("uiFocused=%s  shownFrames=%d  focusedFrame=%s"):format(OnOff(frameControls.isUIFocused),
+			frameControls.shownFrames and #frameControls.shownFrames or 0, focused and (focused:GetName() or "?") or "-"))
+	end
 end
 
 local TOGGLES = {
@@ -85,8 +103,15 @@ SlashCmdList.CCS = function(msg)
 	elseif cmd == "options" or cmd == "config" then
 		CCS.Options:Open()
 	elseif cmd == "" or cmd == "status" then
-		Debug:PrintStatus()
-		CCS.Print("Commands: /ccs options | status | keys [delaySeconds] | latch [on|off] | blizzbar [on|off] | mods [on|off] | focus [on|off] | reapply")
+		-- Chat has gamepad focus while typing, so the delayed form shows the state after chat closes.
+		local delay = tonumber(arg)
+		if delay then
+			CCS.Print("Printing status in " .. delay .. "s - close chat now.")
+			C_Timer.After(delay, function() Debug:PrintStatus() end)
+		else
+			Debug:PrintStatus()
+		end
+		CCS.Print("Commands: /ccs options | status [delaySeconds] | keys [delaySeconds] | latch [on|off] | blizzbar [on|off] | mods [on|off] | focus [on|off] | reapply")
 	else
 		CCS.Print("Unknown command: " .. cmd)
 	end
