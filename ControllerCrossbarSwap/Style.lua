@@ -274,8 +274,16 @@ function Style:ApplyButtonArt(button, index)
 		autoCast.Shine:SetAllPoints()
 	end
 
+	-- hooksecurefunc, never a replacement method: Blizzard's ActionBarActionEventsFrame plays cast animations by
+	-- looping over all action buttons (ours and its own gamepad buttons on the same slots). A plain Lua override
+	-- here tainted the rest of that loop, so Blizzard's buttons stored isCastingAnimFillingFromRight as tainted.
+	-- When the loot window opened after a fishing channel, their Collapse() read it and the interact-target update
+	-- was blocked ("Interface action failed", taint.log 2026-11-12). The hook runs after Blizzard's atlases and
+	-- doesn't carry taint back into the loop.
 	if button.SpellCastAnimFrame then
-		button.SpellCastAnimFrame.SetupAnimAtlases = function(_, isChannelCast) SetupCastAnimAtlases(button, isChannelCast) end
+		hooksecurefunc(button.SpellCastAnimFrame, "SetupAnimAtlases", function(_, isChannelCast)
+			SetupCastAnimAtlases(button, isChannelCast)
+		end)
 	end
 end
 
