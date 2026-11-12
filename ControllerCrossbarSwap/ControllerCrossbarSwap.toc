@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Controller Crossbar Swap
 ## Notes: Swap the active controller crossbar with a tap of LT/RT: sticky bars, rotation into the main position, combat-safe.
-## Version: 1.2.1
+## Version: 1.2.2
 ## Author: mikevromen
 ## X-Website: https://github.com/mikevromen/WoWFControllerExtended
 ## SavedVariables: CCS_DB, WFCE_DB
