@@ -22,6 +22,9 @@ local RING_INDEX = { top = 0, right = 1, bottom = 2, left = 3 }
 
 local ROTATE_ANIM_DURATION = 0.22
 
+-- Blizzard's stance watermark size per focus (ActionBarStyles.lua: 250x115 expanded, 210x92 collapsed).
+local STANCE_WATERMARK_LAYOUT = { expanded = { 250, 115 }, collapsed = { 210, 92 } }
+
 -- Restricted environment, self = header. Positions, resizes and re-anchors bars and buttons.
 -- * Expanded bar: the visible one (held modifier wins over the latched bar).
 -- * With "rotate" on, bars shift around the ring so the latched bar sits in the top (main) slot.
@@ -80,8 +83,18 @@ local LAYOUT = [=[
 	self:CallMethod("OnVisibleBarChanged", bar)
 ]=]
 
-local function MakeInteractIconUpdater(texture)
+local function SetIconInset(icon, inset)
+	icon:ClearAllPoints()
+	icon:SetPoint("TOPLEFT", inset, -inset)
+	icon:SetPoint("BOTTOMRIGHT", -inset, inset)
+end
+
+-- skip(): true while the button shows something else (a stance action, see Bars:OnStanceChanged).
+local function MakeInteractIconUpdater(texture, skip)
 	local function Update()
+		if skip() then
+			return
+		end
 		for _, unit in ipairs({ "softinteract", "target" }) do
 			if (UnitExists(unit) or UnitIsGameObject(unit)) and SetUnitCursorTexture(texture, unit, nil, nil, false) then
 				return
@@ -120,26 +133,33 @@ function Bars:CreateReservedButton(group, index)
 
 	local icon = button:CreateTexture(nil, "BACKGROUND", nil, 1)
 	icon:AddMaskTexture(button.ccsMask)
-	local inset = info.inset or 0
-	icon:SetPoint("TOPLEFT", inset, -inset)
-	icon:SetPoint("BOTTOMRIGHT", -inset, inset)
+	button.ccsInset = info.inset or 0
+	SetIconInset(icon, button.ccsInset)
 	button.SpecialActionIcon = icon
 
-	if info.atlas then
-		icon:SetAtlas(info.atlas)
-	elseif info.name == "Inspect" then
-		local function Update()
-			icon:SetAtlas(UnitExists("target") and "crosshair_inspect_32" or "crosshair_unableinspect_32")
-		end
-		CCS.On("PLAYER_TARGET_CHANGED", Update)
-		Update()
-	elseif info.name == "Interact" then
-		local update = MakeInteractIconUpdater(icon)
-		for _, event in ipairs({ "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_SOFT_ENEMY_CHANGED", "PLAYER_TARGET_CHANGED", "PLAYER_EQUIPMENT_CHANGED" }) do
-			CCS.On(event, update)
-		end
-		update()
+	-- While Blizzard's stance bar replaces the top bar these keys press stance slots 5-8 (see OnStanceChanged), so
+	-- the reserved art must not overwrite the stance icon.
+	local function InStance()
+		return button.ccsStanceSlot ~= nil
 	end
+	local apply
+	if info.atlas then
+		apply = function() icon:SetAtlas(info.atlas) end
+	elseif info.name == "Inspect" then
+		apply = function()
+			if not InStance() then
+				icon:SetAtlas(UnitExists("target") and "crosshair_inspect_32" or "crosshair_unableinspect_32")
+			end
+		end
+		CCS.On("PLAYER_TARGET_CHANGED", apply)
+	elseif info.name == "Interact" then
+		apply = MakeInteractIconUpdater(icon, InStance)
+		for _, event in ipairs({ "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_SOFT_ENEMY_CHANGED", "PLAYER_TARGET_CHANGED", "PLAYER_EQUIPMENT_CHANGED" }) do
+			CCS.On(event, apply)
+		end
+	end
+	button.ccsApplyReserved = apply
+	apply()
 	return button
 end
 
@@ -157,6 +177,13 @@ function Bars:CreateGroup(bar)
 	group.BackgroundFocus:SetSize(512, 160)
 	group.BackgroundFocus:SetPoint("CENTER")
 	group.BackgroundFocus:Hide()
+
+	-- Shown while this bar shows stance actions, like Blizzard's stance bar (ActionBarTemplates.xml BackgroundWatermark,
+	-- tinted; sized per focus in ActionBarStyles.lua).
+	group.StanceWatermark = group:CreateTexture(nil, "BACKGROUND", nil, 1)
+	group.StanceWatermark:SetAtlas("gamepad-actionbar-stance-backing")
+	group.StanceWatermark:SetVertexColor(0.066, 0.063, 0.063, 0.8)
+	group.StanceWatermark:Hide()
 
 	-- Rotation glide: the secure layout snaps the bar to its new slot, then this plays in reverse from the old slot.
 	-- Animations only offset rendering, so playing them on a protected frame is allowed in combat.
@@ -293,6 +320,16 @@ function Bars:Init()
 	self:CreateModifierIcons()
 	self:CreateShoulderArt()
 	self:CreateIndicators()
+
+	-- Stance actions shown on the reserved top face buttons (OnStanceChanged) need their icon and cooldown kept fresh.
+	local function RefreshStance()
+		if self.stanceFirst then
+			self:RefreshReservedOverride()
+		end
+	end
+	for _, event in ipairs({ "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN" }) do
+		CCS.On(event, RefreshStance)
+	end
 
 	if InputDeviceIconSetManager and InputDeviceIconSetManager.RegisterActiveInputDeviceIconSetUpdatedCallback then
 		InputDeviceIconSetManager:RegisterActiveInputDeviceIconSetUpdatedCallback(function()
@@ -537,6 +574,10 @@ function Bars:OnVisibleBarChanged(visibleBar)
 	for bar, group in pairs(self.groups) do
 		local focus = bar == visibleBar and Style.FOCUS.EXPANDED or Style.FOCUS.COLLAPSED
 		group.BackgroundFocus:SetShown(focus == Style.FOCUS.EXPANDED)
+		local watermark = STANCE_WATERMARK_LAYOUT[focus]
+		group.StanceWatermark:SetSize(watermark[1], watermark[2])
+		group.StanceWatermark:ClearAllPoints()
+		group.StanceWatermark:SetPoint("CENTER", group, "CENTER", 0, -10)
 		if self.indicators then
 			self:LayoutIndicator(bar, focus)
 		end
@@ -551,9 +592,64 @@ function Bars:OnVisibleBarChanged(visibleBar)
 			end
 			Style:ApplyFocus(button, focus)
 		end
+		if CCS.PetBar then
+			CCS.PetBar:ApplyFocus(bar, focus)
+		end
 
 		for _, icon in ipairs(self.modifierIcons[bar] or {}) do
 			if focus == Style.FOCUS.EXPANDED then icon:SetFocused() else icon:SetPressable() end
+		end
+	end
+end
+
+-- Called from the restricted SyncPage snippet (experimental stance bar): bar is our bar showing stance actions or
+-- "", first its first stance slot. Visuals only, so fine in combat. On the top bar the face buttons are Blizzard's
+-- (unbound by us), and Blizzard's active bar is then its stance bar, so they press stance slots 5-8: show those.
+function Bars:OnStanceChanged(bar, first)
+	self.stanceBar = bar ~= "" and bar or nil
+	for name, group in pairs(self.groups) do
+		group.StanceWatermark:SetShown(name == self.stanceBar)
+	end
+	self.stanceFirst = self.stanceBar == "top" and first > 0 and first or nil
+	self:RefreshReservedOverride()
+end
+
+-- Experimental pet bar (PetBar.lua): bar is the bar showing pet actions or nil. On the top bar, Blizzard's face
+-- bindings press its possess bar (its active bar), so the reserved display buttons show pet actions 5-8.
+function Bars:OnPetBarChanged(bar, firstPetID)
+	self.petTopFirst = bar == "top" and firstPetID or nil
+	self:RefreshReservedOverride()
+end
+
+-- Reserved top-face display buttons show what Blizzard's face bindings press while one of its override bars
+-- replaces the top bar: the possess bar wins over the stance bar, as in Blizzard's UI.
+function Bars:RefreshReservedOverride()
+	local petFirst, stanceFirst = self.petTopFirst, self.stanceFirst
+	for index, button in ipairs(self.groups.top.buttons) do
+		if button.ccsApplyReserved then
+			if petFirst or stanceFirst then
+				local texture, start, duration, enable, modRate
+				if petFirst then
+					local id = petFirst + index - 1
+					local _, petTexture, isToken = GetPetActionInfo(id)
+					texture = isToken and _G[petTexture] or petTexture
+					start, duration, enable = GetPetActionCooldown(id)
+					button.ccsStanceSlot = id
+				else
+					local slot = stanceFirst + index - 1
+					texture = GetActionTexture(slot)
+					start, duration, enable, modRate = GetActionCooldown(slot)
+					button.ccsStanceSlot = slot
+				end
+				SetIconInset(button.SpecialActionIcon, 0)
+				button.SpecialActionIcon:SetTexture(texture)
+				CooldownFrame_Set(button.cooldown, start, duration, enable, nil, modRate)
+			elseif button.ccsStanceSlot then
+				button.ccsStanceSlot = nil
+				SetIconInset(button.SpecialActionIcon, button.ccsInset)
+				button.cooldown:Clear()
+				button.ccsApplyReserved()
+			end
 		end
 	end
 end
