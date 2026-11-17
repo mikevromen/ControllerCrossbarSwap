@@ -19,12 +19,13 @@ With Blizzard's controller UI you only get your LT, RT and LT+RT bars while you 
 - **Looks like the default crossbar:** the same layout, buttons and art as Blizzard's crossbar, in the same place on your screen. You can make the bars you're not using smaller.
 - **Uses your existing bars:** it shows the abilities you placed with Blizzard's own controller bar editor, so there's nothing to set up again.
 - **LB / RB targeting bars:** holding LB, RB or both still brings up Blizzard's friendly, hostile and shortcuts bars (party and raid targeting, raid markers, bags, chat ...), on whichever bar you have selected.
+- **Stances and forms (experimental):** in a stance, form or stealth, your RT bar can switch to that stance's abilities, like the default UI.
 - **All three bar pages:** LB+RB + D-pad left/right switches pages like the default UI, and your bars follow.
 - **Works in combat:** swapping, rotating and resizing all work mid-fight.
 
 ## Options
 
-Open the options with **`/ccs options`**, or from the game menu: **Options → AddOns → Controller Crossbar Swap → Open options window**. With a controller, press **Y** on that page.
+Open the options with **`/ccs options`**, or from the game menu: **Options → AddOns → Controller Crossbar Swap → Open options window** (mouse). With a controller, use `/ccs options`.
 
 In the options window, use the D-pad to move, A to change a setting and B to close. The mouse works too.
 
@@ -39,6 +40,9 @@ In the options window, use the D-pad to move, A to change a setting and B to clo
 | ↳ Default bar icon | Icon for the default bar: none, gold star, numbers 1–3, raid markers, crossed swords, sword, checkmark or gold crest | Gold star |
 | ↳ LT / RT / LT+RT bar icon | The same choice for each of the other bars | None |
 | Size of inactive bars | Make the bars you're not using smaller: Normal, Small or Smaller | Normal |
+| Stance and form bar (experimental) | In a stance, form or stealth, the bar Blizzard uses for stance actions (your RT bar by default) shows that stance's abilities | Off |
+| Pet bar (experimental) | With a pet, the bar Blizzard uses for pet actions shows them (by default the default bar on page 4) | Off |
+| Class action buttons (experimental) | Shows the LB+LT / RB+RT class buttons next to the bottom bar | Off |
 | LB / RB targeting bars | While you hold LB, RB or both, show Blizzard's friendly, hostile or shortcuts bar in the main position, like the default UI. Off keeps your own bar | On |
 
 The options window can't be opened during combat, and it closes by itself if combat starts.
@@ -50,6 +54,11 @@ The options window can't be opened during combat, and it closes by itself if com
    `World of Warcraft\_classic_beta_\Interface\AddOns\ControllerCrossbarSwap`
 3. Start the game and enable **Controller Crossbar Swap** in the AddOns list on the character select screen.
 4. In game, turn on the controller UI: **Options → Gamepad → enable the gamepad interface**.
+
+**Upgrading from "WoWF Controller Extended":** this is the same addon under a new name.
+- Remove the old `WoWFControllerExtended` folder from your AddOns folder.
+- To keep your settings, copy `WTF\Account\<your account>\SavedVariables\WoWFControllerExtended.lua` to `ControllerCrossbarSwap.lua` in the same folder before starting the game. The addon picks them up automatically.
+- `/wfce` still works as a shortcut for `/ccs`.
 
 ## Controls
 
@@ -70,9 +79,13 @@ To place abilities on the bars, use Blizzard's own controller bar editor as usua
 - **LB / RB bars show in Blizzard's crossbar position.** If you moved or rescaled our bars away from it, they appear there and not on top of your bars.
 - **The LT/RT labels under the bars are hidden** while "Rotate bars" is on, because the bars no longer stay in their fixed spots.
 
+## Known issues with other addons
+
+- **Bagnon (bags addon):** in controller mode it can trigger an "Interface action failed because of an AddOn" message, usually after closing the game menu. After that, LB party targeting, raid markers on Y and some buttons stop working until you `/reload`. This comes from Bagnon and also happens with Blizzard's own default controller UI, without Controller Crossbar Swap installed.
+
 ## Not supported yet
 
-- Stance, shapeshift, possess and vehicle bars.
+- Vehicle bars. (The pet bar is experimental, see the options.)
 - PlayStation button layouts (symbols and button art).
 
 ## Feedback

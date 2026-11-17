@@ -31,10 +31,27 @@ local APPLY_LAYER = [=[
 	end
 	self:SetAttribute("blizz-targeting", targeting)
 
-	if self:GetAttribute("enabled") and not self:GetAttribute("suspended") then
+	-- Experimental pet bar: the bar Blizzard's possess bar replaces right now (its watcher is visible), or nil.
+	local petBar = nil
+	if self:GetAttribute("pet-enabled") then
+		local petWatch = self:GetFrameRef("pet-watch")
+		if petWatch and petWatch:IsVisible() then
+			petBar = self:GetAttribute("pet-bar")
+		end
+	end
+
+	local bound = self:GetAttribute("enabled") and not self:GetAttribute("suspended")
+	if bound then
 		for i = 1, 8 do
 			local key = self:GetAttribute("key-" .. i)
-			local target = not targeting and self:GetAttribute("button-" .. bar .. "-" .. i)
+			local target = nil
+			if not targeting then
+				if bar == petBar then
+					target = self:GetAttribute("pet-button-" .. bar .. "-" .. i)
+				else
+					target = self:GetAttribute("button-" .. bar .. "-" .. i)
+				end
+			end
 			if target then
 				self:SetBindingClick(true, key, target)
 			else
@@ -43,13 +60,72 @@ local APPLY_LAYER = [=[
 		end
 	end
 
+	-- Held-trigger keys (SHIFT- / CTRL-) are static bindings; only the pet bar redirects them, and back.
+	local modBar = self:GetAttribute("pet-mod-bar")
+	local newModBar = (bound and petBar ~= "top") and petBar or nil
+	if modBar ~= newModBar then
+		if modBar and bound then
+			local prefix = self:GetAttribute("prefix-" .. modBar)
+			for i = 1, 8 do
+				local target = self:GetAttribute("button-" .. modBar .. "-" .. i)
+				if target then
+					self:SetBindingClick(true, prefix .. self:GetAttribute("key-" .. i), target)
+				end
+			end
+		end
+		if newModBar then
+			local prefix = self:GetAttribute("prefix-" .. newModBar)
+			for i = 1, 8 do
+				local target = self:GetAttribute("pet-button-" .. newModBar .. "-" .. i)
+				if target then
+					self:SetBindingClick(true, prefix .. self:GetAttribute("key-" .. i), target)
+				end
+			end
+		end
+		self:SetAttribute("pet-mod-bar", newModBar)
+	end
+
+	-- Show the pet buttons over that bar (and hide its action buttons); nothing happens while the option is off.
+	if petBar ~= self:GetAttribute("pet-shown") then
+		for b = 1, 4 do
+			local name = self:GetAttribute("bar-name-" .. b) or "-"
+			for i = 1, 8 do
+				local petButton = self:GetFrameRef("pet-" .. name .. "-" .. i)
+				local actionButton = self:GetFrameRef("button-" .. name .. "-" .. i)
+				if petButton then
+					if name == petBar then
+						petButton:Show()
+					else
+						petButton:Hide()
+					end
+				end
+				if actionButton then
+					actionButton:SetAlpha(name == petBar and 0 or 1)
+				end
+			end
+		end
+		self:SetAttribute("pet-shown", petBar)
+		self:CallMethod("OnPetBarChanged", petBar or "")
+	end
+
 	self:RunAttribute("Layout")
+]=]
+
+-- Watcher on Blizzard's possess bar (self = watcher). Does nothing while the experimental pet bar option is off.
+local PET_CHANGED = [=[
+	local header = self:GetFrameRef("header")
+	if header:GetAttribute("pet-enabled") then
+		header:RunAttribute("ApplyLayer")
+	end
 ]=]
 
 -- Restricted, self = header. Follows Blizzard's bar page (LB+RB + D-pad left/right, the bar edit frame ...).
 -- Blizzard pages in plain Lua and fires no event, but it does SetID(storageSlot) on its own buttons, so the ID of
 -- its first top-bar button tells the page. Runs from ApplyLayer, which the shortcuts-bar watcher triggers on
 -- release of LB+RB, so this works in combat. On the special page (4) Blizzard keeps the last standard page's IDs.
+-- Stance bar: Blizzard shows its stance bar (in place of the bar picked by GamepadStanceBarOverride) only while a
+-- stance / form is active and that bar's page is up, and sets its buttons' IDs to the stance's storage slots. A
+-- watcher on it plus a [bonusbar] state driver rerun this, so our "stance-bar" bar takes those slots, in combat too.
 local SYNC_PAGE = [=[
 	local ref = self:GetFrameRef("blizz-page-button")
 	if not ref then
@@ -57,27 +133,61 @@ local SYNC_PAGE = [=[
 	end
 	local first = self:GetAttribute("first-slot")
 	local stride = self:GetAttribute("page-stride")
+	local page = self:GetAttribute("page") or 1
 	local id = ref:GetID()
-	if not id or id < first then
-		return
-	end
-	local page = floor((id - first) / stride) + 1
-	if page > self:GetAttribute("page-count") or page == self:GetAttribute("page") then
-		return
+	if id and id >= first then
+		local idPage = floor((id - first) / stride) + 1
+		if idPage <= self:GetAttribute("page-count") then
+			page = idPage
+		end
 	end
 
+	local stanceBar, stanceFirst = nil, nil
+	local watch = self:GetFrameRef("stance-watch")
+	local stanceButton = self:GetFrameRef("stance-button")
+	if self:GetAttribute("stance-enabled") and watch and watch:IsVisible() and stanceButton then
+		stanceFirst = stanceButton:GetID()
+		if stanceFirst and stanceFirst > 0 then
+			stanceBar = self:GetAttribute("stance-bar")
+		end
+	end
+
+	-- Restricted code can't build tables, so a string key tells whether anything changed.
+	local key = page .. ":" .. (stanceBar or "-") .. ":" .. (stanceBar and stanceFirst or 0)
+	if key == self:GetAttribute("sync-key") then
+		return
+	end
+	self:SetAttribute("sync-key", key)
+
+	local pageChanged = page ~= self:GetAttribute("page")
 	self:SetAttribute("page", page)
 	for b = 1, 4 do
-		local name = self:GetAttribute("bar-name-" .. b)
+		local name = self:GetAttribute("bar-name-" .. b) or "-"
 		for i = 1, 8 do
 			local button = self:GetFrameRef("button-" .. name .. "-" .. i)
 			local base = self:GetAttribute("action-base-" .. name .. "-" .. i)
 			if button and base then
-				button:SetAttribute("action", base + stride * (page - 1))
+				if name == stanceBar then
+					button:SetAttribute("action", stanceFirst + i - 1)
+				else
+					button:SetAttribute("action", base + stride * (page - 1))
+				end
 			end
 		end
 	end
-	self:CallMethod("OnPageChanged", page)
+	if pageChanged then
+		self:CallMethod("OnPageChanged", page)
+	end
+	self:CallMethod("OnStanceChanged", stanceBar or "", stanceBar and stanceFirst or 0)
+]=]
+
+-- Stance watcher show/hide and the [bonusbar] state driver (self = watcher or header). Only the action slots can
+-- change, so SyncPage is enough. With the experimental option off they do nothing; SetStanceBar resyncs on toggle.
+local STANCE_CHANGED = [=[
+	local header = self:GetFrameRef("header") or self
+	if header:GetAttribute("stance-enabled") then
+		header:RunAttribute("SyncPage")
+	end
 ]=]
 
 -- Pre-click wrapper for the LT/RT latch buttons (self = latch button, owner = header).
@@ -171,9 +281,54 @@ function Bindings:Init()
 	if pageButton and pageButton:IsProtected() then
 		header:SetFrameRef("blizz-page-button", pageButton)
 	end
+
+	-- Stance bar (see SYNC_PAGE). The watcher's visibility follows Blizzard's stance bar wherever Blizzard reparents
+	-- it; the state driver below catches stance changes while the bar stays shown.
+	local stanceBar = CCS.Blizzard:GetStanceBar()
+	local stanceButton = stanceBar and stanceBar.Left and stanceBar.Left.ActionButton1
+	if stanceButton and stanceButton:IsProtected() then
+		local watch = CreateFrame("Frame", "CCS_StanceWatch", stanceBar, "SecureHandlerShowHideTemplate")
+		watch:SetFrameRef("header", header)
+		watch:SetAttribute("_onshow", STANCE_CHANGED)
+		watch:SetAttribute("_onhide", STANCE_CHANGED)
+		header:SetFrameRef("stance-watch", watch)
+		header:SetFrameRef("stance-button", stanceButton)
+	end
+	self:ApplyStanceAttributes(CCS.db.stanceBar) -- SyncPage runs later (layout refs aren't set up yet)
+	-- Blizzard's own event for this cvar (ActionBarTemplates.xml overrideCVarChangedEvent).
+	CCS.On("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED", function()
+		CCS.RunOutOfCombat("Bindings:StanceBar", function() self:SetStanceBar(CCS.db.stanceBar) end)
+	end)
+	-- Experimental pet bar (PetBar.lua): its buttons, the held-trigger prefixes, and a watcher on Blizzard's possess bar.
+	for _, bar in ipairs(Controller.BARS) do
+		header:SetAttribute("prefix-" .. bar, Controller.BAR_MODIFIERS[bar])
+		for i, petButton in pairs(CCS.PetBar.buttons[bar] or {}) do
+			header:SetAttribute("pet-button-" .. bar .. "-" .. i, petButton:GetName())
+			header:SetFrameRef("pet-" .. bar .. "-" .. i, petButton)
+		end
+	end
+	local possessBar = CCS.Blizzard:GetPossessBar()
+	if possessBar then
+		local watch = CreateFrame("Frame", "CCS_PetWatch", possessBar, "SecureHandlerShowHideTemplate")
+		watch:SetFrameRef("header", header)
+		watch:SetAttribute("_onshow", PET_CHANGED)
+		watch:SetAttribute("_onhide", PET_CHANGED)
+		header:SetFrameRef("pet-watch", watch)
+	end
+	self:ApplyPetAttributes(CCS.db.petBar)
+	CCS.On("GAMEPAD_POSSESS_BAR_OVERRIDE_CHANGED", function()
+		CCS.RunOutOfCombat("Bindings:PetBar", function() self:SetPetBar(CCS.db.petBar) end)
+	end)
+	function header:OnPetBarChanged(bar)
+		CCS.PetBar:OnShownBarChanged(bar)
+	end
+
 	-- Must exist before ApplyLayer can run (rule: define header methods before any snippet calls them).
 	function header:OnPageChanged(page)
 		CCS.Bars:OnPageChanged(page)
+	end
+	function header:OnStanceChanged(bar, first)
+		CCS.Bars:OnStanceChanged(bar, first)
 	end
 	-- Pages changed some other way than LB+RB (e.g. a key bound to Blizzard's page cycle button) don't trigger a
 	-- watcher; catch those out of combat. Deferred a frame so we never act inside Blizzard's call stack.
@@ -212,6 +367,56 @@ function Bindings:Init()
 	self:SetCombatBar(CCS.db.combatBar)
 	header:SetAttribute("_onstate-combat", ON_COMBAT_STATE)
 	RegisterStateDriver(header, "combat", "[combat] on; off")
+
+	-- Stance changes while Blizzard's stance bar stays shown (e.g. Battle -> Defensive) only change its button IDs.
+	-- The driver re-evaluates after UPDATE_BONUS_ACTIONBAR, i.e. after Blizzard's own handler set the new IDs.
+	header:SetAttribute("_onstate-stance", STANCE_CHANGED)
+	RegisterStateDriver(header, "stance",
+		"[bonusbar:1] 1; [bonusbar:2] 2; [bonusbar:3] 3; [bonusbar:4] 4; [bonusbar:5] 5; 0")
+end
+
+-- GamepadStanceBarOverride (Enum.GamepadStanceBarOverride): 1 None, 2-4 page 1 left/right/bottom,
+-- 5-8 page 2 top/left/right/bottom, 9-12 page 3 top/left/right/bottom (StanceBar.lua). Our bar names match
+-- Blizzard's. The page needs no attribute: Blizzard only shows the stance bar while its page is up.
+local STANCE_OVERRIDE_BARS = { "top", "left", "right", "bottom" }
+
+function Bindings:ApplyStanceAttributes(enabled)
+	local value = tonumber(GetCVar("GamepadStanceBarOverride"))
+	local bar = value and value >= 2 and STANCE_OVERRIDE_BARS[(value - 1) % 4 + 1] or nil
+	self.header:SetAttribute("stance-bar", bar)
+	self.header:SetAttribute("stance-enabled", (enabled and bar) and true or nil)
+end
+
+-- Out of combat only (option + cvar changes): which of our bars follows Blizzard's stance bar, if any.
+function Bindings:SetStanceBar(enabled)
+	if InCombatLockdown() then
+		return
+	end
+	self:ApplyStanceAttributes(enabled)
+	self.header:Execute([[ self:RunAttribute("SyncPage") ]])
+end
+
+-- GamepadPossessBarOverride (Enum.GamepadPossessBarOverride): 1 SpecialPageTopBar, then like the stance cvar
+-- (PossessBar.lua). As with the stance bar, Blizzard only shows the possess bar while its page is up.
+function Bindings:ApplyPetAttributes(enabled)
+	local value = tonumber(GetCVar("GamepadPossessBarOverride"))
+	local bar = nil
+	if value == 1 then
+		bar = "top"
+	elseif value and value >= 2 then
+		bar = STANCE_OVERRIDE_BARS[(value - 1) % 4 + 1]
+	end
+	self.header:SetAttribute("pet-bar", bar)
+	self.header:SetAttribute("pet-enabled", (enabled and bar) and true or nil)
+end
+
+-- Out of combat only (option + cvar changes): the experimental pet bar.
+function Bindings:SetPetBar(enabled)
+	if InCombatLockdown() then
+		return
+	end
+	self:ApplyPetAttributes(enabled)
+	self.header:Execute([[ self:RunAttribute("ApplyLayer") ]])
 end
 
 -- Out of combat only (options window): "off", "last" or a bar name.
@@ -249,7 +454,9 @@ function Bindings:ApplyStatic()
 		end
 	end
 
-	-- Bare keys are owned by the restricted snippet so they can change in combat.
+	-- Bare keys are owned by the restricted snippet so they can change in combat. The static held-trigger keys
+	-- were just reset, so the pet bar's redirect of them (if any) has to be applied again.
+	header:SetAttribute("pet-mod-bar", nil)
 	header:Execute([[ self:RunAttribute("ApplyLayer") ]])
 end
 

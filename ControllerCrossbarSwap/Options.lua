@@ -101,6 +101,27 @@ local ROWS = {
 	},
 	{
 		type = "checkbox",
+		key = "stanceBar",
+		label = "Stance and form bar (experimental)",
+		tooltip = "Experimental, still being tested. In a stance, form or stealth, the bar Blizzard uses for stance actions (by default your RT bar) shows that stance's abilities, like the default controller UI. Pick which bar in Blizzard's controller settings.",
+		onChange = function(value) CCS.Bindings:SetStanceBar(value) end,
+	},
+	{
+		type = "checkbox",
+		key = "petBar",
+		label = "Pet bar (experimental)",
+		tooltip = "Experimental, still being tested. With a pet (or while possessing), the bar Blizzard uses for pet actions shows them, like the default controller UI. By default that's the default bar on page 4: page there with LB+RB + D-pad. Pick the bar in Blizzard's controller settings.",
+		onChange = function(value) CCS.Bindings:SetPetBar(value) end,
+	},
+	{
+		type = "checkbox",
+		key = "classActionButtons",
+		label = "Class action buttons (experimental)",
+		tooltip = "Experimental, still being tested. Shows Blizzard's round LB+LT / RB+RT class buttons (for classes that have them) next to the bottom bar. They work either way; this only makes them visible.",
+		onChange = function() if CCS.active then CCS.Blizzard:SetBlizzardBarFaded(CCS.db.hideBlizzardBar) end end,
+	},
+	{
+		type = "checkbox",
 		key = "targetingBars",
 		label = "LB / RB targeting bars",
 		tooltip = "While you hold LB, RB or both, the main bar shows Blizzard's friendly, hostile or shortcuts bar (party and raid targeting, raid markers, bar pages, bags, chat ...), like the default controller UI. Turn this off to keep your own main bar while holding LB / RB.",

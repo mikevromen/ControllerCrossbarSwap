@@ -61,6 +61,24 @@ function Blizzard:GetPageReferenceButton()
 	return bar and bar.Left and bar.Left.ActionButton1
 end
 
+-- Class action buttons and their LB+LT / RB+RT prompts (PageUnit children, MainActionBarFrame.xml).
+local CLASS_ACTION_KEYS = { "LeftClassAction", "RightClassAction", "LeftInputPrompt", "RightInputPrompt" }
+
+-- Blizzard's stance bar (an override bar, StanceBar.lua). It is shown exactly while a stance / form is active and
+-- the page it replaces is up; its buttons then hold the stance's storage slots (UpdateWithStorageId). Read-only.
+function Blizzard:GetStanceBar()
+	local main = _G.GamepadMainActionBarFrame
+	local actionBars = main and main.PageUnit and main.PageUnit.actionBars
+	return actionBars and actionBars.stanceBar
+end
+
+-- Blizzard's possess (pet) bar, an override bar like the stance bar (PossessBar.lua). Read-only.
+function Blizzard:GetPossessBar()
+	local main = _G.GamepadMainActionBarFrame
+	local actionBars = main and main.PageUnit and main.PageUnit.actionBars
+	return actionBars and actionBars.possessBar
+end
+
 -- Key of the targeting bar Blizzard is showing right now (e.g. "ShortcutsActionBar"), or nil.
 function Blizzard:GetShownTargetingBarKey()
 	local main = _G.GamepadMainActionBarFrame
@@ -93,6 +111,18 @@ function Blizzard:SetBlizzardBarFaded(faded)
 	local pageTracker = bar and bar.PageUnit and bar.PageUnit.PageTracker
 	if pageTracker then
 		pageTracker:SetIgnoreParentAlpha(showTargeting)
+	end
+	-- Class action buttons (LB+LT / RB+RT, MainActionBarFrame.xml): Blizzard shows them only for classes with a
+	-- class flyout and drives them itself (OnUpdate + IsKeyDown), so they work under our bars; only their art was
+	-- faded with the crossbar. They sit beside Blizzard's bottom bar, which is our bottom slot while we follow its
+	-- position.
+	local pageUnit = bar and bar.PageUnit
+	if pageUnit then
+		for _, key in ipairs(CLASS_ACTION_KEYS) do
+			if pageUnit[key] then
+				pageUnit[key]:SetIgnoreParentAlpha(faded and CCS.db.classActionButtons and true or false)
+			end
+		end
 	end
 end
 
